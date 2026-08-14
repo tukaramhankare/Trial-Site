@@ -49,7 +49,7 @@
   </button>
 
   <nav id="app-header-nav" class="app-header__nav">
-    <a href="#section-rooms" class="js-nav-item">Rooms &amp; Rates</a>
+    <a href="#section-rooms" id="nav-link-rooms" class="js-nav-item">Rooms &amp; Rates</a>
     <a href="#section-food" id="nav-link-food" class="js-nav-item">Food &amp; Dining <span class="nav-badge">Service</span></a>
     <a href="#section-offers" id="nav-link-offers" class="js-nav-item">Special Offers</a>
     <a href="#section-reviews" id="nav-link-reviews" class="js-nav-item">Reviews</a>
@@ -395,12 +395,24 @@
   <div class="modal__backdrop" id="user-bookings-backdrop"></div>
   <div class="modal__dialog modal__dialog--wide">
     <button type="button" class="modal__close" id="btn-close-my-bookings">✕</button>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
-      <h2 style="margin:0;">My Reservations</h2>
-      <button type="button" id="btn-clear-my-reservations" class="btn btn--danger btn--sm" style="background:#C53030;color:#ffffff;" title="Clear all my reservation records">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:12px;border-bottom:2px solid var(--gold-pale);padding-bottom:12px;">
+      <div>
+        <h2 style="margin:0 0 4px;font-size:1.5rem;">My Reservations</h2>
+        <div style="display:flex;align-items:center;gap:8px;font-size:0.82rem;color:var(--ink-soft);">
+          <span>Device ID: <strong id="user-device-id-badge" style="color:var(--gold-deep);font-family:var(--font-mono);">USR-XXXXXX</strong></span>
+          <span>•</span>
+          <span style="color:var(--success);font-weight:600;">🔒 Private &amp; Isolated</span>
+        </div>
+      </div>
+      <button type="button" id="btn-clear-my-reservations" class="btn btn--danger btn--sm" style="background:#C53030;color:#ffffff;" title="Clear all my personal reservation records from this device">
         🗑️ Clear My Reservations
       </button>
     </div>
+
+    <div class="notification-alert" style="margin-bottom:16px;background:var(--bg-soft);border:1px solid var(--line);font-size:0.83rem;line-height:1.45;color:var(--ink-soft);">
+      🛡️ <strong>Individual Privacy Guarantee:</strong> Your reservations and purchases are strictly isolated to your device and are never visible or accessible to other website users. All orders are received and processed by the Hotel Admin Console.
+    </div>
+
     <div id="my-bookings-list" class="ticket-list"></div>
   </div>
 </div>
@@ -485,6 +497,7 @@
       <button type="button" class="admin-nav__item" data-admin-tab="access">🛠️ Special Access &amp; Content Customizer</button>
       <button type="button" class="admin-nav__item" data-admin-tab="bookings">📋 Guest Reservations Log</button>
       <button type="button" class="admin-nav__item" id="admin-nav-btn-food" data-admin-tab="food">🍽️ Food &amp; Dining Menu</button>
+      <button type="button" class="admin-nav__item" data-admin-tab="publish">🌐 Publish &amp; Host Anywhere (GitHub Pages)</button>
       <button type="button" class="admin-nav__item" data-admin-tab="export">📁 Export &amp; System Backup</button>
     </nav>
 
@@ -746,15 +759,30 @@
 
             <!-- Section Visibility Master Toggles -->
             <div class="customizer-block">
-              <h3>6. Master Section Visibility Toggles</h3>
-              <div class="toggles-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:12px;">
+              <h3>6. Master Section Visibility &amp; Service Toggles (Admin Rights Only)</h3>
+              <p style="font-size:0.83rem;color:var(--ink-soft);margin-bottom:12px;">
+                Switch sections on or off, or pause online booking and food service capabilities with full Admin Authority.
+              </p>
+              <div class="toggles-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));gap:12px;">
                 <label class="toggle-card-sm">
-                  <input type="checkbox" id="admin-toggle-sec-hero-search">
-                  <span>Show Hero Search Bar</span>
+                  <input type="checkbox" id="admin-toggle-sec-rooms">
+                  <span>Show "Booking Rooms" Section</span>
+                </label>
+                <label class="toggle-card-sm">
+                  <input type="checkbox" id="admin-toggle-enable-booking">
+                  <span>Enable Online Room Booking</span>
                 </label>
                 <label class="toggle-card-sm">
                   <input type="checkbox" id="admin-toggle-sec-food">
-                  <span>Show Food &amp; Dining</span>
+                  <span>Show "Food &amp; Dining" Section</span>
+                </label>
+                <label class="toggle-card-sm">
+                  <input type="checkbox" id="admin-toggle-enable-food">
+                  <span>Enable Food &amp; Dining Service</span>
+                </label>
+                <label class="toggle-card-sm">
+                  <input type="checkbox" id="admin-toggle-sec-hero-search">
+                  <span>Show Hero Search Bar</span>
                 </label>
                 <label class="toggle-card-sm">
                   <input type="checkbox" id="admin-toggle-sec-offers">
@@ -887,7 +915,92 @@
         </div>
       </section>
 
-      <!-- ADMIN TAB 6: EXPORT & BACKUP -->
+      <!-- ADMIN TAB 6: PUBLISH & HOST ANYWHERE (GITHUB PAGES / STATIC HOSTING) -->
+      <section id="admin-tab-publish" class="admin-tab" hidden>
+        <div class="panel">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+            <div>
+              <h2 style="margin:0 0 6px;">🌐 Publish &amp; Reflect Changes Everywhere (GitHub Pages)</h2>
+              <p style="margin:0;color:var(--ink-soft);font-size:0.92rem;max-width:720px;line-height:1.5;">
+                When you make modifications to room categories, rates, food menus, photos, policies, or visibility toggles, use these tools to ensure your changes reflect for <strong>all visitors worldwide</strong> even when hosted on static platforms like <strong>GitHub Pages</strong>.
+              </p>
+            </div>
+            <span class="status-badge status-badge--confirmed" style="font-size:0.85rem;padding:4px 10px;">⚡ Static &amp; Cloud Ready</span>
+          </div>
+
+          <!-- OPTION 1: Download / Copy site-config.json for GitHub Pages -->
+          <div style="background:#F8F6F2;border:1px solid var(--line);border-radius:8px;padding:18px;margin-top:20px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
+              <h3 style="margin:0;font-size:1.1rem;color:var(--ink);">📁 Option 1: One-Click <code style="font-family:var(--font-mono);background:#fff;padding:2px 6px;border-radius:4px;border:1px solid var(--line);">site-config.json</code> (Recommended for GitHub Pages)</h3>
+              <span style="font-size:0.8rem;color:var(--gold-deep);font-weight:600;">Zero External API Required</span>
+            </div>
+            <p style="font-size:0.88rem;color:var(--ink-soft);margin-bottom:14px;line-height:1.5;">
+              Download the live configuration file containing all your customized room prices, photos, menus, and settings. Then simply place or commit <strong style="color:var(--ink);">site-config.json</strong> in the root folder of your GitHub Pages repository. Every user browsing the site will immediately see your published updates.
+            </p>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+              <button type="button" id="btn-download-site-config" class="btn btn--gold">
+                📥 Download Published site-config.json
+              </button>
+              <button type="button" id="btn-copy-site-config" class="btn btn--outline">
+                📋 Copy site-config.json Code
+              </button>
+              <button type="button" id="btn-view-site-config-preview" class="btn btn--outline">
+                👁️ View Live Config Preview
+              </button>
+            </div>
+
+            <!-- Collapsible Preview Code Block -->
+            <div id="site-config-preview-box" style="margin-top:12px;" hidden>
+              <span class="field__label">Live JSON Configuration Payload:</span>
+              <pre id="site-config-code-display" style="background:#1C1B18;color:#A8FF78;padding:14px;border-radius:6px;font-family:var(--font-mono);font-size:0.8rem;max-height:280px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;"></pre>
+            </div>
+          </div>
+
+          <!-- OPTION 2: Remote Live Cloud Sync (No-Git Realtime Updates) -->
+          <div style="background:#F4F8FA;border:1px solid #CFE2EC;border-radius:8px;padding:18px;margin-top:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
+              <h3 style="margin:0;font-size:1.1rem;color:#1A446C;">☁️ Option 2: Remote Live Cloud Sync URL (Zero Git Commits Needed)</h3>
+              <span style="font-size:0.8rem;background:#E1EEF6;color:#1A446C;padding:2px 8px;border-radius:12px;font-weight:600;">Realtime Cross-Device Sync</span>
+            </div>
+            <p style="font-size:0.88rem;color:#2D5A88;margin-bottom:14px;line-height:1.5;">
+              Want changes to reflect on GitHub Pages <strong>instantly in real-time without committing to GitHub</strong>? Paste a free remote JSON URL (e.g. from GitHub Gist Raw, JSONBin.io, or npoint.io). The site will dynamically load live settings from this cloud endpoint whenever any visitor opens your GitHub Pages link!
+            </p>
+            <div class="form-row" style="margin-bottom:10px;">
+              <label class="field" style="flex:1;">
+                <span class="field__label">Remote Cloud Sync JSON Endpoint URL</span>
+                <input type="url" id="admin-cloud-sync-url" placeholder="https://gist.githubusercontent.com/.../raw/site-config.json or https://api.jsonbin.io/v3/b/...">
+              </label>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+              <button type="button" id="btn-save-cloud-sync" class="btn btn--primary btn--sm">
+                ☁️ Save Cloud Sync URL &amp; Update
+              </button>
+              <button type="button" id="btn-fetch-cloud-now" class="btn btn--outline btn--sm">
+                🔄 Pull Live Config From Cloud Now
+              </button>
+              <button type="button" id="btn-clear-cloud-sync" class="btn btn--danger btn--sm" style="background:#e53e3e;color:#fff;">
+                ✕ Disconnect Cloud Sync
+              </button>
+            </div>
+            <div id="cloud-sync-status-badge" style="margin-top:10px;font-size:0.82rem;color:#2D5A88;">
+              Status: <strong>Local Browser &amp; Standalone JSON Engine Active</strong>
+            </div>
+          </div>
+
+          <!-- OPTION 3: Instant Live Local Persistence -->
+          <div style="background:#F6FBF7;border:1px solid #D2ECD8;border-radius:8px;padding:18px;margin-top:16px;">
+            <h3 style="margin:0 0 8px;font-size:1.1rem;color:#1E5E2F;">💾 Instant Live Persistence</h3>
+            <p style="font-size:0.88rem;color:#2E7D43;margin-bottom:12px;">
+              All changes saved in this Admin Console are instantly persisted into browser storage and live memory.
+            </p>
+            <button type="button" id="btn-admin-instant-save-all" class="btn btn--gold btn--sm">
+              ⚡ Apply &amp; Save All Changes Instantly
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ADMIN TAB 7: EXPORT & BACKUP -->
       <section id="admin-tab-export" class="admin-tab" hidden>
         <div class="panel">
           <h2>Export Reservations</h2>

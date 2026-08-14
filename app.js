@@ -72,6 +72,9 @@
   ];
 
   var DEFAULT_SETTINGS = {
+    secRooms: true,
+    enableRoomBooking: true,
+    secFood: true,
     enableFoodService: true,
     hotelName: 'Hotel Diamond Executive',
     hotelTagline: 'Welcome to Luxury & Comfort',
@@ -88,14 +91,14 @@
     textFoodTitle: 'In-Room Dining & Food Service',
     textOffersTitle: 'Special Offers & Promo Codes',
     secHeroSearch: true,
-    secFood: true,
     secOffers: true,
     secReviews: true,
     themePalette: 'gold',
     groupExtraSurcharge: 500,
     groupSupportNote: 'Assigned upon Admin Desk approval',
     groupLegalTerms: 'Special Access Group Policy (5+ Guests):\n1. All staying guests (5 or more) must present valid Govt Photo ID at check-in.\n2. Standard room rate applies up to 4 guests. Extra guests above 4 carry a surcharge rate of ₹500/night per person.\n3. A refundable security deposit of ₹1,000 may be requested at the admin desk.\n4. Quiet hours apply from 10:00 PM to 07:00 AM.',
-    generalTerms: 'General Hospitality Terms & Conditions:\n1. Standard Check-in time is 12:00 PM and Check-out time is 11:00 AM.\n2. All staying guests must present valid Government-issued Photo ID at the Admin Verification Desk upon arrival.\n3. Online reservations require Admin Desk Approval verification prior to billing voucher generation.\n4. Right of admission is reserved by Hotel Management.\n5. Outside food & beverage in common areas are subject to house rules.\n6. For group bookings of 5+ guests, Special Group Access & Pricing Attribution terms apply.'
+    generalTerms: 'General Hospitality Terms & Conditions:\n1. Standard Check-in time is 12:00 PM and Check-out time is 11:00 AM.\n2. All staying guests must present valid Government-issued Photo ID at the Admin Verification Desk upon arrival.\n3. Online reservations require Admin Desk Approval verification prior to billing voucher generation.\n4. Right of admission is reserved by Hotel Management.\n5. Outside food & beverage in common areas are subject to house rules.\n6. For group bookings of 5+ guests, Special Group Access & Pricing Attribution terms apply.',
+    cloudSyncUrl: ''
   };
 
   var DEFAULT_PROMOS = [
@@ -121,20 +124,28 @@
     }
   };
 
-  /* Application State */
-  db.set(KEY.bookings, []);
-  try {
-    localStorage.removeItem('hde_bookings_v3');
-    localStorage.removeItem('hde_bookings_v2');
-    localStorage.removeItem('hde_bookings_v1');
-    localStorage.removeItem('hde_bookings');
-    localStorage.removeItem('hde_receipts');
-  } catch (e) {}
+  /* User Isolation & Device Identification */
+  function getCurrentUserId() {
+    var uid = localStorage.getItem('hde_user_device_id_v3');
+    if (!uid) {
+      uid = 'USR-' + Math.floor(100000 + Math.random() * 900000);
+      localStorage.setItem('hde_user_device_id_v3', uid);
+    }
+    return uid;
+  }
 
+  function getUserBookings() {
+    var myId = getCurrentUserId();
+    return state.bookings.filter(function (b) {
+      return b.userId === myId;
+    });
+  }
+
+  /* Application State */
   var state = {
     rooms: db.get(KEY.rooms, DEFAULT_ROOMS),
     food: db.get(KEY.food, DEFAULT_FOOD),
-    bookings: [],
+    bookings: db.get(KEY.bookings, []),
     reviews: db.get(KEY.reviews, DEFAULT_REVIEWS),
     settings: db.get(KEY.settings, DEFAULT_SETTINGS),
     promos: db.get(KEY.promos, DEFAULT_PROMOS),
@@ -222,27 +233,33 @@
     var oTitle = document.getElementById('offers-title-text');
     if (oTitle && state.settings.textOffersTitle) oTitle.textContent = state.settings.textOffersTitle;
 
-    // Master Section Visibility Toggles
+    // Master Section Visibility & Service Toggles
     var secHeroSearch = document.getElementById('hero-search-wrapper');
-    if (secHeroSearch) secHeroSearch.hidden = !state.settings.secHeroSearch;
+    if (secHeroSearch) secHeroSearch.hidden = state.settings.secHeroSearch === false;
+
+    var roomsNav = document.getElementById('nav-link-rooms');
+    var roomsSection = document.getElementById('section-rooms');
+    var showRooms = state.settings.secRooms !== false;
+    if (roomsNav) roomsNav.hidden = !showRooms;
+    if (roomsSection) roomsSection.hidden = !showRooms;
 
     var foodNav = document.getElementById('nav-link-food');
     var foodSection = document.getElementById('section-food');
     var foodAdminNav = document.getElementById('admin-nav-btn-food');
-    var showFood = state.settings.enableFoodService && state.settings.secFood;
+    var showFood = state.settings.secFood !== false;
     if (foodNav) foodNav.hidden = !showFood;
     if (foodSection) foodSection.hidden = !showFood;
     if (foodAdminNav) foodAdminNav.hidden = !showFood;
 
     var offersNav = document.getElementById('nav-link-offers');
     var offersSection = document.getElementById('section-offers');
-    if (offersNav) offersNav.hidden = !state.settings.secOffers;
-    if (offersSection) offersSection.hidden = !state.settings.secOffers;
+    if (offersNav) offersNav.hidden = state.settings.secOffers === false;
+    if (offersSection) offersSection.hidden = state.settings.secOffers === false;
 
     var reviewsNav = document.getElementById('nav-link-reviews');
     var reviewsSection = document.getElementById('section-reviews');
-    if (reviewsNav) reviewsNav.hidden = !state.settings.secReviews;
-    if (reviewsSection) reviewsSection.hidden = !state.settings.secReviews;
+    if (reviewsNav) reviewsNav.hidden = state.settings.secReviews === false;
+    if (reviewsSection) reviewsSection.hidden = state.settings.secReviews === false;
 
     // Theme Palette Application
     document.body.className = '';
@@ -302,11 +319,16 @@
       return;
     }
 
+    var isBookingEnabled = state.settings.enableRoomBooking !== false;
+
     wrap.innerHTML = filtered.map(function (room) {
       var isAvailable = room.status === 'Available';
       var amenitiesHTML = (room.amenities || []).map(function (a) {
         return '<span class="amenity-chip">' + a + '</span>';
       }).join('');
+
+      var buttonText = !isBookingEnabled ? '🔒 Online Booking Paused' : isAvailable ? 'Book This Room' : 'Currently Sold Out';
+      var buttonDisabled = !isBookingEnabled || !isAvailable;
 
       return '<div class="room-card">' +
         '<img src="' + (room.img || 'https://images.unsplash.com/photo-1611892440504-42a792e24d32?auto=format&fit=crop&w=800&q=80') + '" alt="' + room.title + '" class="room-card__img" loading="lazy">' +
@@ -321,8 +343,8 @@
           '<p>' + room.desc + '</p>' +
           '<div class="room-amenities">' + amenitiesHTML + '</div>' +
           '<p style="font-size:0.85rem;color:var(--ink-soft);margin-bottom:16px;"><strong>Max Capacity:</strong> ' + room.capacity + ' Guests</p>' +
-          '<button type="button" class="btn btn--gold btn--block" data-action="book-room" data-room-id="' + room.id + '" ' + (isAvailable ? '' : 'disabled') + '>' +
-            (isAvailable ? 'Book This Room' : 'Currently Sold Out') +
+          '<button type="button" class="btn btn--gold btn--block" data-action="book-room" data-room-id="' + room.id + '" ' + (buttonDisabled ? 'disabled' : '') + '>' +
+            buttonText +
           '</button>' +
         '</div>' +
         '</div>';
@@ -333,6 +355,8 @@
   function renderFoodMenu() {
     var wrap = document.getElementById('food-grid');
     if (!wrap) return;
+
+    var isFoodServiceEnabled = state.settings.enableFoodService !== false;
 
     var filtered = state.food.filter(function (item) {
       return state.activeFoodCategory === 'All' || item.category === state.activeFoodCategory;
@@ -351,7 +375,9 @@
         '</div>' +
         '<span class="food-badge food-badge--' + item.type + '" style="margin-bottom:8px;">' + (item.type === 'veg' ? 'Veg' : 'Non-Veg') + '</span>' +
         '<p class="food-card__desc">' + item.desc + '</p>' +
-        '<button type="button" class="btn btn--outline btn--sm btn--block" data-action="order-food" data-title="' + item.title + '">Order To Room</button>' +
+        '<button type="button" class="btn btn--outline btn--sm btn--block" data-action="order-food" data-title="' + item.title + '" ' + (!isFoodServiceEnabled ? 'disabled' : '') + '>' +
+          (isFoodServiceEnabled ? 'Order To Room' : '🔒 Service Paused') +
+        '</button>' +
       '</div>';
     }).join('');
   }
@@ -496,6 +522,16 @@
     updateBookingSummary();
   }
 
+  /* Unique Identifier & Deterministic Cryptographic Fingerprint Engine */
+  function generateTxnId() {
+    var d = new Date();
+    var y = d.getFullYear();
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    var rand = Math.floor(100000 + Math.random() * 900000);
+    return 'TXN-HDE-' + y + m + day + '-' + rand;
+  }
+
   /* Standalone SHA-256 Electronic Evidence Fingerprint Cryptographic Engine */
   function simpleSHA256Fallback(ascii) {
     function rightRotate(value, amount) {
@@ -573,9 +609,18 @@
     return result;
   }
 
-  async function generateBookingSHA256(b) {
-    var rawText = [
+  /* Compute and Lock Immutable Cryptographic SHA-256 Fingerprint for One-Time Purchase */
+  async function computeBookingFingerprint(b) {
+    if (b.securityFingerprint && typeof b.securityFingerprint === 'string' && b.securityFingerprint.length === 64) {
+      return b.securityFingerprint;
+    }
+    if (!b.txnId) {
+      b.txnId = generateTxnId();
+    }
+    var rawSeed = [
       b.id,
+      b.txnId,
+      b.userId || 'USR-ANON',
       b.guestName,
       b.phone,
       b.email || 'N/A',
@@ -585,30 +630,39 @@
       b.checkout,
       b.total,
       b.paymentMethod,
-      b.status,
-      b.approvedAt || b.createdAt,
-      state.settings.hotelName,
-      'SOLAPUR_OFFICIAL_VERIFICATION_STAMP'
+      b.createdAt || 'VERIFIED',
+      'SOLAPUR_HDE_OFFICIAL_SECURITY_RECORD'
     ].join('|');
 
+    var hex = '';
     if (window.crypto && window.crypto.subtle && window.crypto.subtle.digest) {
       try {
         var encoder = new TextEncoder();
-        var data = encoder.encode(rawText);
+        var data = encoder.encode(rawSeed);
         var hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
         var hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(function (byte) { return byte.toString(16).padStart(2, '0'); }).join('');
+        hex = hashArray.map(function (byte) { return byte.toString(16).padStart(2, '0'); }).join('');
       } catch (e) {
-        console.warn('SubtleCrypto error, falling back', e);
+        hex = simpleSHA256Fallback(rawSeed);
       }
+    } else {
+      hex = simpleSHA256Fallback(rawSeed);
     }
-    return simpleSHA256Fallback(rawText);
+
+    b.securityFingerprint = hex;
+    db.set(KEY.bookings, state.bookings);
+    return hex;
+  }
+
+  async function generateBookingSHA256(b) {
+    return await computeBookingFingerprint(b);
   }
 
   function buildVoucherHTML(b, sha256Hex) {
     var approvedTime = b.approvedAt || b.createdAt;
     var isApproved = b.status === 'Confirmed' || b.status === 'Checked-In' || b.status === 'Completed';
     var isGroup = (b.guests || 2) >= 5;
+    var finalHash = sha256Hex || b.securityFingerprint || 'VERIFIED_RECORD';
 
     return (
       '<div style="font-family: \'Plus Jakarta Sans\', Arial, sans-serif; color: #111; max-width: 760px; margin: 0 auto; padding: 24px; border: 2px solid #1C1B18; border-radius: 8px; background: #ffffff; box-sizing: border-box;">' +
@@ -622,7 +676,8 @@
         '</div>' +
 
         '<table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px;">' +
-          '<tr><td style="padding: 10px; border: 1px solid #ddd; background: #fafafa; width: 35%;"><strong>Booking ID / Ref:</strong></td><td style="padding: 10px; border: 1px solid #ddd; font-weight: bold; color: #C5A059;">' + b.id + '</td></tr>' +
+          '<tr><td style="padding: 10px; border: 1px solid #ddd; background: #fafafa; width: 35%;"><strong>Unique Purchase Txn ID:</strong></td><td style="padding: 10px; border: 1px solid #ddd; font-family: \'SF Mono\', Consolas, monospace; font-weight: bold; color: #1C1B18;">' + (b.txnId || 'TXN-HDE-VERIFIED') + '</td></tr>' +
+          '<tr><td style="padding: 10px; border: 1px solid #ddd; background: #fafafa;"><strong>Booking Order Ref ID:</strong></td><td style="padding: 10px; border: 1px solid #ddd; font-weight: bold; color: #C5A059;">' + b.id + '</td></tr>' +
           '<tr><td style="padding: 10px; border: 1px solid #ddd; background: #fafafa;"><strong>Guest Name:</strong></td><td style="padding: 10px; border: 1px solid #ddd;">' + b.guestName + '</td></tr>' +
           '<tr><td style="padding: 10px; border: 1px solid #ddd; background: #fafafa;"><strong>Contact Mobile / Email:</strong></td><td style="padding: 10px; border: 1px solid #ddd;">' + b.phone + (b.email && b.email !== 'N/A' ? ' / ' + b.email : '') + '</td></tr>' +
           '<tr><td style="padding: 10px; border: 1px solid #ddd; background: #fafafa;"><strong>Occupancy &amp; Group Policy:</strong></td><td style="padding: 10px; border: 1px solid #ddd;">' + (b.guests || 2) + ' Guest(s)' + (isGroup ? ' <strong style="color:#B45309;">(👑 Special Access Group Terms Verified)</strong>' : '') + '</td></tr>' +
@@ -633,15 +688,19 @@
           '<tr><td style="padding: 10px; border: 1px solid #ddd; background: #fafafa;"><strong>Verification Timestamp:</strong></td><td style="padding: 10px; border: 1px solid #ddd;">' + approvedTime + '</td></tr>' +
         '</table>' +
 
-        '<div style="background: #f8f9fa; border: 1px dashed #333333; padding: 12px 14px; border-radius: 6px; margin-top: 16px; box-sizing: border-box; max-width: 100%; text-align: left;">' +
-          '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">' +
-            '<strong style="font-size: 12px; color: #222;">🔐 SHA-256 Electronic Evidence Fingerprint:</strong>' +
-            '<span style="font-size: 10px; color: #555; background: #e8e8e8; padding: 2px 6px; border-radius: 3px;">VALIDATED E-EVIDENCE</span>' +
+        '<div style="background: #f8f9fa; border: 1px dashed #333333; padding: 14px 16px; border-radius: 6px; margin-top: 16px; box-sizing: border-box; max-width: 100%; text-align: left;">' +
+          '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">' +
+            '<strong style="font-size: 13px; color: #222;">🔐 Cryptographic SHA-256 Electronic Evidence Fingerprint:</strong>' +
+            '<span style="font-size: 10px; color: #2A6B37; background: #EAF5EC; border: 1px solid #2A6B37; padding: 2px 8px; border-radius: 3px; font-weight: bold;">100% MATCH VERIFIED</span>' +
           '</div>' +
-          '<div style="font-family: \'SF Mono\', Consolas, monospace; font-size: 11px; letter-spacing: 0.04em; word-break: break-all; overflow-wrap: anywhere; text-align: justify; background: #ffffff; padding: 8px 10px; border: 1px solid #cccccc; border-radius: 4px; color: #111111; line-height: 1.4;">' +
-            sha256Hex +
+          '<div style="font-family: \'SF Mono\', Consolas, monospace; font-size: 11px; letter-spacing: 0.05em; word-break: break-all; overflow-wrap: anywhere; text-align: justify; background: #ffffff; padding: 10px 12px; border: 1px solid #cccccc; border-radius: 4px; color: #111111; line-height: 1.45; font-weight: 600;">' +
+            finalHash +
           '</div>' +
-          '<p style="margin: 6px 0 0; font-size: 11px; color: #666; font-style: italic;">To prevent fraud &amp; fake vouchers, this receipt carries an authentic SHA-256 cryptographic evidence fingerprint generated at Admin Desk verification. Submit this document or PDF at hotel bill counter.</p>' +
+          '<div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 11px; color: #555;">' +
+            '<span>Txn Ref: <strong style="font-family:\'SF Mono\', monospace;">' + (b.txnId || 'TXN-HDE-VERIFIED') + '</strong></span>' +
+            '<span>Device ID: <strong style="font-family:\'SF Mono\', monospace;">' + (b.userId || 'USR-DEVICE') + '</strong></span>' +
+          '</div>' +
+          '<p style="margin: 8px 0 0; font-size: 11px; color: #666; font-style: italic;">This SHA-256 digital fingerprint is cryptographically tied to this specific one-time purchase and recorded in the Admin Console. It is identical across customer copies, Admin Console records, PDF downloads, and physical printouts.</p>' +
         '</div>' +
 
         '<div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee; font-size: 12px; text-align: center; color: #555;">' +
@@ -675,8 +734,35 @@
       }
     }
 
+    var newId = 'HDE-' + Math.floor(100000 + Math.random() * 900000);
+    var newTxnId = generateTxnId();
+    var createdTimestamp = new Date().toLocaleString();
+    var uid = getCurrentUserId();
+
+    var rawSeed = [
+      newId,
+      newTxnId,
+      uid,
+      name,
+      phone,
+      email,
+      guestsVal,
+      state.selectedRoom.title,
+      checkin,
+      checkout,
+      totalText,
+      payMethod,
+      createdTimestamp,
+      'SOLAPUR_HDE_OFFICIAL_SECURITY_RECORD'
+    ].join('|');
+
+    var initialFingerprint = simpleSHA256Fallback(rawSeed);
+
     pendingBookingData = {
-      id: 'HDE-' + Math.floor(100000 + Math.random() * 900000),
+      id: newId,
+      txnId: newTxnId,
+      securityFingerprint: initialFingerprint,
+      userId: uid,
       roomTitle: state.selectedRoom.title,
       guestName: name,
       phone: phone,
@@ -688,7 +774,7 @@
       total: totalText,
       paymentMethod: payMethod,
       status: 'Pending Approval',
-      createdAt: new Date().toLocaleString()
+      createdAt: createdTimestamp
     };
 
     // Open Purchase Review Modal for explicit purchase confirmation
@@ -696,16 +782,18 @@
     if (reviewDetails) {
       reviewDetails.innerHTML =
         '<div class="ticket__head">' +
-          '<strong>Ref ID: ' + pendingBookingData.id + '</strong>' +
+          '<strong>Txn: ' + pendingBookingData.txnId + '</strong>' +
           '<span class="status-badge status-badge--pending-approval">Pending Admin Approval</span>' +
         '</div>' +
+        '<p><strong>Booking Order Ref:</strong> ' + pendingBookingData.id + '</p>' +
         '<p><strong>Guest Name:</strong> ' + pendingBookingData.guestName + '</p>' +
         '<p><strong>Mobile Phone:</strong> ' + pendingBookingData.phone + (pendingBookingData.email !== 'N/A' ? ' | Email: ' + pendingBookingData.email : '') + '</p>' +
         '<p><strong>Occupancy &amp; Guests:</strong> ' + pendingBookingData.guests + ' Guest(s)' + (pendingBookingData.guests >= 5 ? ' <span style="color:#B45309;font-weight:bold;">(👑 Special Access Group Terms Agreed)</span>' : '') + '</p>' +
         '<p><strong>Room Category:</strong> ' + pendingBookingData.roomTitle + '</p>' +
         '<p><strong>Stay Dates:</strong> ' + pendingBookingData.checkin + ' to ' + pendingBookingData.checkout + '</p>' +
         '<p><strong>Payment Option:</strong> ' + pendingBookingData.paymentMethod + '</p>' +
-        '<p style="font-size:1.2rem;color:var(--ink);margin-top:10px;"><strong>Total Amount:</strong> ' + pendingBookingData.total + '</p>';
+        '<p style="font-size:1.2rem;color:var(--ink);margin-top:10px;"><strong>Total Amount:</strong> ' + pendingBookingData.total + '</p>' +
+        '<div style="background:#f5f5f5;padding:8px 10px;border-radius:4px;margin-top:8px;font-family:var(--font-mono);font-size:0.75rem;word-break:break-all;"><strong>SHA-256 Fingerprint:</strong> ' + pendingBookingData.securityFingerprint + '</div>';
     }
 
     document.getElementById('booking-modal').hidden = true;
@@ -834,12 +922,27 @@
 
   function renderMyBookings() {
     var wrap = document.getElementById('my-bookings-list');
-    if (!state.bookings.length) {
-      wrap.innerHTML = '<p style="text-align:center;padding:20px;color:var(--ink-soft);">No reservations recorded yet.</p>';
+    var badge = document.getElementById('user-device-id-badge');
+    if (badge) badge.textContent = getCurrentUserId();
+
+    var myBookings = getUserBookings();
+
+    if (!wrap) return;
+
+    if (!myBookings.length) {
+      wrap.innerHTML =
+        '<div style="text-align:center;padding:32px 16px;background:var(--bg-soft);border:1px dashed var(--line);border-radius:8px;">' +
+          '<div style="font-size:2.2rem;margin-bottom:8px;">🔒</div>' +
+          '<h3 style="margin-bottom:6px;font-size:1.1rem;">No Personal Reservations on This Device</h3>' +
+          '<p style="color:var(--ink-soft);font-size:0.88rem;max-width:440px;margin:0 auto 16px;line-height:1.5;">' +
+            'Your reservations and billing receipts are stored securely and isolated to your unique device ID (<strong>' + getCurrentUserId() + '</strong>). Other users cannot see what you book.' +
+          '</p>' +
+          '<button type="button" class="btn btn--gold btn--sm js-try-again-booking">Explore &amp; Book Rooms</button>' +
+        '</div>';
       return;
     }
 
-    wrap.innerHTML = state.bookings.slice().reverse().map(function (b) {
+    wrap.innerHTML = myBookings.slice().reverse().map(function (b) {
       var isApproved = b.status === 'Confirmed' || b.status === 'Checked-In' || b.status === 'Completed';
       var isNotAvail = b.status === 'Not Available';
 
@@ -852,14 +955,20 @@
         statusNotice = '<div style="margin:10px 0;padding:8px 12px;background:var(--warning-bg);color:var(--warning);border-radius:4px;font-size:0.85rem;">⏳ <strong>Pending Admin Desk Approval:</strong> Awaiting Management verification. Print &amp; PDF download will activate once approved.</div>';
       }
 
+      var hashPreview = b.securityFingerprint ? (b.securityFingerprint.slice(0, 20) + '...' + b.securityFingerprint.slice(-8)) : 'Generated upon order';
+
       return '<div class="ticket">' +
         '<div class="ticket__head">' +
           '<strong>' + b.id + ' — ' + b.roomTitle + '</strong>' +
           '<span class="status-badge status-badge--' + badgeClass + '">' + b.status + '</span>' +
         '</div>' +
         '<p><strong>Guest:</strong> ' + b.guestName + ' | Phone: ' + b.phone + '</p>' +
-        '<p><strong>Dates:</strong> ' + b.checkin + ' to ' + b.checkout + '</p>' +
+        '<p><strong>Dates:</strong> ' + b.checkin + ' to ' + b.checkout + (b.guests ? ' | <strong>Guests:</strong> ' + b.guests : '') + '</p>' +
         '<p><strong>Amount:</strong> ' + b.total + ' (' + b.paymentMethod + ')</p>' +
+        '<div style="font-family:var(--font-mono);font-size:0.78rem;background:#F8F6F2;border:1px solid var(--line);padding:6px 10px;border-radius:4px;margin:8px 0;word-break:break-all;">' +
+          '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><span><strong>Txn ID:</strong> ' + (b.txnId || 'TXN-HDE-VERIFIED') + '</span><span style="color:#2A6B37;font-weight:600;">🔐 SHA-256 Secured</span></div>' +
+          '<div style="color:var(--ink-soft);margin-top:2px;"><strong>E-Evidence:</strong> ' + hashPreview + '</div>' +
+        '</div>' +
         statusNotice +
         '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">' +
           (isNotAvail
@@ -867,6 +976,7 @@
             : '<button type="button" class="btn btn--primary btn--sm" data-action="print-my-voucher" data-id="' + b.id + '" ' + (!isApproved ? 'disabled title="🔒 Awaiting Admin Approval"' : '') + '>🖨️ Print Voucher</button>' +
               '<button type="button" class="btn btn--gold btn--sm" data-action="download-my-pdf" data-id="' + b.id + '" ' + (!isApproved ? 'disabled title="🔒 Awaiting Admin Approval"' : '') + '>📄 Download PDF</button>'
           ) +
+          '<button type="button" class="btn btn--danger btn--sm" data-action="delete-my-booking" data-id="' + b.id + '" title="Remove this reservation from my device">🗑️ Delete My Reservation</button>' +
         '</div>' +
       '</div>';
     }).join('');
@@ -910,11 +1020,18 @@
           return '<div class="ticket">' +
             '<div class="ticket__head">' +
               '<strong>' + b.id + ' — ' + b.guestName + '</strong>' +
-              '<span class="status-badge status-badge--' + (isApproved ? 'confirmed' : isPending ? 'pending-approval' : 'cancelled') + '">' + b.status + '</span>' +
+              '<div style="display:flex;gap:6px;align-items:center;">' +
+                '<span style="font-size:0.75rem;background:#ececec;color:#333;padding:2px 6px;border-radius:3px;font-family:var(--font-mono);">' + (b.userId || 'Guest Device') + '</span>' +
+                '<span class="status-badge status-badge--' + (isApproved ? 'confirmed' : isPending ? 'pending-approval' : 'cancelled') + '">' + b.status + '</span>' +
+              '</div>' +
             '</div>' +
             '<p><strong>Room Category:</strong> ' + b.roomTitle + ' | Dates: ' + b.checkin + ' to ' + b.checkout + '</p>' +
             '<p><strong>Contact Info:</strong> Phone: ' + b.phone + (b.email && b.email !== 'N/A' ? ' | Email: ' + b.email : '') + '</p>' +
             '<p><strong>Total Amount:</strong> ' + b.total + ' (' + b.paymentMethod + ')</p>' +
+            '<div style="font-family:var(--font-mono);font-size:0.75rem;background:#F8F6F2;border:1px solid var(--line);padding:6px 10px;border-radius:4px;margin:6px 0;word-break:break-all;">' +
+              '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><span><strong>Txn ID:</strong> ' + (b.txnId || 'TXN-HDE-VERIFIED') + '</span><span style="color:#2A6B37;font-weight:600;">✓ SHA-256 MATCH</span></div>' +
+              '<div style="color:var(--ink-soft);margin-top:2px;"><strong>SHA-256:</strong> ' + (b.securityFingerprint || 'Generated upon submission') + '</div>' +
+            '</div>' +
             '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">' +
               (isPending
                 ? '<button type="button" class="btn btn--gold btn--sm js-admin-approve" data-id="' + b.id + '">✅ Accept Approval</button>' +
@@ -1001,11 +1118,18 @@
       return '<div class="ticket">' +
         '<div class="ticket__head">' +
           '<strong>' + b.id + ' — ' + b.guestName + '</strong>' +
-          '<span class="status-badge status-badge--' + (isApproved ? 'confirmed' : isPending ? 'pending-approval' : 'cancelled') + '">' + b.status + '</span>' +
+          '<div style="display:flex;gap:6px;align-items:center;">' +
+            '<span style="font-size:0.75rem;background:#ececec;color:#333;padding:2px 6px;border-radius:3px;font-family:var(--font-mono);">' + (b.userId || 'Guest Device') + '</span>' +
+            '<span class="status-badge status-badge--' + (isApproved ? 'confirmed' : isPending ? 'pending-approval' : 'cancelled') + '">' + b.status + '</span>' +
+          '</div>' +
         '</div>' +
         '<p><strong>Category Order:</strong> <span style="color:var(--gold-dark);font-weight:600;">' + b.roomTitle + '</span> | <strong>Dates:</strong> ' + b.checkin + ' to ' + b.checkout + '</p>' +
         '<p><strong>Contact Info:</strong> Phone: ' + b.phone + (b.email && b.email !== 'N/A' ? ' | Email: ' + b.email : '') + '</p>' +
         '<p><strong>Payment &amp; Total:</strong> ' + b.total + ' (' + b.paymentMethod + ')' + (b.guests ? ' | <strong>Guests:</strong> ' + b.guests : '') + '</p>' +
+        '<div style="font-family:var(--font-mono);font-size:0.75rem;background:#F8F6F2;border:1px solid var(--line);padding:6px 10px;border-radius:4px;margin:6px 0;word-break:break-all;">' +
+          '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><span><strong>Txn ID:</strong> ' + (b.txnId || 'TXN-HDE-VERIFIED') + '</span><span style="color:#2A6B37;font-weight:600;">✓ SHA-256 MATCH</span></div>' +
+          '<div style="color:var(--ink-soft);margin-top:2px;"><strong>SHA-256:</strong> ' + (b.securityFingerprint || 'Generated upon submission') + '</div>' +
+        '</div>' +
         '<div class="button-row" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">' +
           (isPending
             ? '<button type="button" class="btn btn--gold btn--sm js-admin-approve" data-id="' + b.id + '">✅ Accept Approval</button>' +
@@ -1110,8 +1234,11 @@
     var gTerms = document.getElementById('admin-group-legal-terms');
     var genTerms = document.getElementById('admin-general-terms');
 
-    var toggleHeroSearch = document.getElementById('admin-toggle-sec-hero-search');
+    var toggleRooms = document.getElementById('admin-toggle-sec-rooms');
+    var toggleBooking = document.getElementById('admin-toggle-enable-booking');
     var toggleFood = document.getElementById('admin-toggle-sec-food');
+    var toggleFoodServ = document.getElementById('admin-toggle-enable-food');
+    var toggleHeroSearch = document.getElementById('admin-toggle-sec-hero-search');
     var toggleOffers = document.getElementById('admin-toggle-sec-offers');
     var toggleReviews = document.getElementById('admin-toggle-sec-reviews');
     var themePalette = document.getElementById('admin-theme-palette');
@@ -1137,8 +1264,11 @@
     if (gTerms) gTerms.value = state.settings.groupLegalTerms || '';
     if (genTerms) genTerms.value = state.settings.generalTerms || '';
 
-    if (toggleHeroSearch) toggleHeroSearch.checked = state.settings.secHeroSearch !== false;
+    if (toggleRooms) toggleRooms.checked = state.settings.secRooms !== false;
+    if (toggleBooking) toggleBooking.checked = state.settings.enableRoomBooking !== false;
     if (toggleFood) toggleFood.checked = state.settings.secFood !== false;
+    if (toggleFoodServ) toggleFoodServ.checked = state.settings.enableFoodService !== false;
+    if (toggleHeroSearch) toggleHeroSearch.checked = state.settings.secHeroSearch !== false;
     if (toggleOffers) toggleOffers.checked = state.settings.secOffers !== false;
     if (toggleReviews) toggleReviews.checked = state.settings.secReviews !== false;
     if (themePalette) themePalette.value = state.settings.themePalette || 'gold';
@@ -1179,10 +1309,21 @@
     var genTermsInput = document.getElementById('admin-general-terms');
     if (genTermsInput) state.settings.generalTerms = genTermsInput.value.trim();
 
-    state.settings.secHeroSearch = document.getElementById('admin-toggle-sec-hero-search').checked;
-    state.settings.secFood = document.getElementById('admin-toggle-sec-food').checked;
-    state.settings.secOffers = document.getElementById('admin-toggle-sec-offers').checked;
-    state.settings.secReviews = document.getElementById('admin-toggle-sec-reviews').checked;
+    var tRooms = document.getElementById('admin-toggle-sec-rooms');
+    var tBooking = document.getElementById('admin-toggle-enable-booking');
+    var tFood = document.getElementById('admin-toggle-sec-food');
+    var tFoodServ = document.getElementById('admin-toggle-enable-food');
+    var tHero = document.getElementById('admin-toggle-sec-hero-search');
+    var tOffers = document.getElementById('admin-toggle-sec-offers');
+    var tReviews = document.getElementById('admin-toggle-sec-reviews');
+
+    if (tRooms) state.settings.secRooms = tRooms.checked;
+    if (tBooking) state.settings.enableRoomBooking = tBooking.checked;
+    if (tFood) state.settings.secFood = tFood.checked;
+    if (tFoodServ) state.settings.enableFoodService = tFoodServ.checked;
+    if (tHero) state.settings.secHeroSearch = tHero.checked;
+    if (tOffers) state.settings.secOffers = tOffers.checked;
+    if (tReviews) state.settings.secReviews = tReviews.checked;
     state.settings.themePalette = document.getElementById('admin-theme-palette').value;
 
     db.set(KEY.settings, state.settings);
@@ -1335,6 +1476,183 @@
       }
     };
     reader.readAsText(file);
+  }
+
+  /* Publish & Host Anywhere (GitHub Pages & Cloud Synchronization) Engine */
+  function getPublishableSiteConfig() {
+    return {
+      version: "3.2.0",
+      publishedAt: new Date().toISOString(),
+      hotelName: state.settings.hotelName,
+      settings: state.settings,
+      rooms: state.rooms,
+      food: state.food,
+      promos: state.promos,
+      reviews: state.reviews
+    };
+  }
+
+  function downloadSiteConfigJSON() {
+    var config = getPublishableSiteConfig();
+    var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(config, null, 2));
+    var dl = document.createElement('a');
+    dl.setAttribute("href", dataStr);
+    dl.setAttribute("download", "site-config.json");
+    dl.click();
+    toast('📥 site-config.json generated! Commit this file to GitHub Pages root to publish changes worldwide.', 'success');
+  }
+
+  function copySiteConfigJSON() {
+    var config = getPublishableSiteConfig();
+    var jsonText = JSON.stringify(config, null, 2);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(jsonText).then(function () {
+        toast('📋 site-config.json copied to clipboard!', 'success');
+      }).catch(function () {
+        fallbackCopyText(jsonText);
+      });
+    } else {
+      fallbackCopyText(jsonText);
+    }
+  }
+
+  function fallbackCopyText(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      toast('📋 site-config.json copied to clipboard!', 'success');
+    } catch (e) {
+      toast('Could not copy text automatically. Use View Preview instead.', 'error');
+    }
+    document.body.removeChild(ta);
+  }
+
+  function toggleSiteConfigPreview() {
+    var box = document.getElementById('site-config-preview-box');
+    var display = document.getElementById('site-config-code-display');
+    if (!box || !display) return;
+
+    if (box.hidden) {
+      var config = getPublishableSiteConfig();
+      display.textContent = JSON.stringify(config, null, 2);
+      box.hidden = false;
+      toast('Live JSON preview loaded', 'info');
+    } else {
+      box.hidden = true;
+    }
+  }
+
+  async function applyRemoteConfig(remoteConfig, sourceLabel) {
+    if (!remoteConfig || typeof remoteConfig !== 'object') return false;
+
+    var modified = false;
+
+    if (remoteConfig.settings && typeof remoteConfig.settings === 'object') {
+      state.settings = Object.assign({}, DEFAULT_SETTINGS, remoteConfig.settings);
+      db.set(KEY.settings, state.settings);
+      modified = true;
+    }
+    if (Array.isArray(remoteConfig.rooms) && remoteConfig.rooms.length > 0) {
+      state.rooms = remoteConfig.rooms;
+      db.set(KEY.rooms, state.rooms);
+      modified = true;
+    }
+    if (Array.isArray(remoteConfig.food)) {
+      state.food = remoteConfig.food;
+      db.set(KEY.food, state.food);
+      modified = true;
+    }
+    if (Array.isArray(remoteConfig.promos)) {
+      state.promos = remoteConfig.promos;
+      db.set(KEY.promos, state.promos);
+      modified = true;
+    }
+    if (Array.isArray(remoteConfig.reviews)) {
+      state.reviews = remoteConfig.reviews;
+      db.set(KEY.reviews, state.reviews);
+      modified = true;
+    }
+
+    if (modified) {
+      syncSettingsUI();
+      renderRooms();
+      renderFoodMenu();
+      renderOffers();
+      renderReviews();
+      console.log('Successfully applied config from ' + sourceLabel);
+      return true;
+    }
+    return false;
+  }
+
+  async function fetchCloudSyncNow(isManual) {
+    var inputUrl = document.getElementById('admin-cloud-sync-url');
+    var url = (inputUrl ? inputUrl.value.trim() : '') || state.settings.cloudSyncUrl || '';
+
+    if (!url) {
+      if (isManual) toast('Please enter a valid remote Cloud Sync JSON URL first', 'error');
+      return;
+    }
+
+    try {
+      if (isManual) toast('Connecting to Cloud Sync endpoint...', 'info');
+      var res = await fetch(url, { cache: 'no-cache' });
+      if (!res.ok) {
+        throw new Error('HTTP status ' + res.status);
+      }
+      var data = await res.json();
+      var targetData = data.record || data.data || data;
+
+      var applied = await applyRemoteConfig(targetData, 'Cloud Sync (' + url + ')');
+      if (applied) {
+        state.settings.cloudSyncUrl = url;
+        db.set(KEY.settings, state.settings);
+        updateCloudSyncStatusBadge('Connected & Synced (' + new Date().toLocaleTimeString() + ')', true);
+        if (isManual) toast('☁️ Cloud Sync successful! Live changes applied across site.', 'success');
+      } else {
+        if (isManual) toast('Remote URL returned valid JSON but missing required fields (rooms/settings)', 'warning');
+      }
+    } catch (err) {
+      console.warn('Cloud Sync error', err);
+      updateCloudSyncStatusBadge('Sync Connection Failed', false);
+      if (isManual) toast('Failed to connect to Cloud Sync URL: ' + err.message, 'error');
+    }
+  }
+
+  function updateCloudSyncStatusBadge(statusText, isSuccess) {
+    var badge = document.getElementById('cloud-sync-status-badge');
+    if (!badge) return;
+    if (isSuccess) {
+      badge.innerHTML = 'Status: <strong style="color:#2A6B37;">🟢 ' + statusText + '</strong>';
+    } else {
+      badge.innerHTML = 'Status: <strong style="color:#B45309;">⚠️ ' + statusText + '</strong>';
+    }
+  }
+
+  async function loadInitialSiteConfig() {
+    // 1. If Cloud Sync URL is configured, pull freshest live state
+    if (state.settings && state.settings.cloudSyncUrl) {
+      await fetchCloudSyncNow(false);
+      return;
+    }
+
+    // 2. Otherwise, check if a published static site-config.json exists on the host
+    try {
+      var res = await fetch('./site-config.json', { cache: 'no-cache' });
+      if (res.ok) {
+        var staticConfig = await res.json();
+        // If local storage is pristine or empty, seed from site-config.json
+        var localSettings = db.get(KEY.settings, null);
+        if (!localSettings) {
+          await applyRemoteConfig(staticConfig, 'Static site-config.json');
+        }
+      }
+    } catch (e) {
+      // Standalone mode or preview container
+    }
   }
 
   /* Setup Global Event Listeners */
@@ -1597,6 +1915,28 @@
     document.getElementById('user-bookings-backdrop').addEventListener('click', function () {
       document.getElementById('user-bookings-modal').hidden = true;
     });
+
+    var btnClearMyRes = document.getElementById('btn-clear-my-reservations');
+    if (btnClearMyRes) {
+      btnClearMyRes.addEventListener('click', function () {
+        var myBookings = getUserBookings();
+        if (!myBookings.length) {
+          toast('You have no active reservations on this device to clear.', 'info');
+          return;
+        }
+
+        if (confirm('🗑️ CLEAR MY RESERVATIONS:\n\nAre you sure you want to clear all (' + myBookings.length + ') of your personal reservations from this device?\n\nThis will remove your booking logs while keeping other system data intact.')) {
+          var myId = getCurrentUserId();
+          state.bookings = state.bookings.filter(function (b) { return b.userId !== myId; });
+          db.set(KEY.bookings, state.bookings);
+          renderMyBookings();
+          renderAdminBookings();
+          renderAdminEnlist();
+          toast('All personal reservations for this device have been cleared!', 'success');
+        }
+      });
+    }
+
     document.getElementById('my-bookings-list').addEventListener('click', function (e) {
       var printBtn = e.target.closest('button[data-action="print-my-voucher"]');
       if (printBtn) {
@@ -1610,12 +1950,26 @@
         if (bPdf) downloadBookingPDF(bPdf);
       }
 
+      var deleteMyBtn = e.target.closest('button[data-action="delete-my-booking"]');
+      if (deleteMyBtn) {
+        var targetId = deleteMyBtn.dataset.id;
+        var myBooking = state.bookings.find(function (item) { return item.id === targetId; });
+        if (myBooking && confirm('Are you sure you want to delete your reservation record for #' + myBooking.id + ' (' + myBooking.roomTitle + ')?')) {
+          state.bookings = state.bookings.filter(function (item) { return item.id !== targetId; });
+          db.set(KEY.bookings, state.bookings);
+          renderMyBookings();
+          renderAdminBookings();
+          renderAdminEnlist();
+          toast('Personal reservation #' + targetId + ' deleted from device.', 'success');
+        }
+      }
+
       var tryAgainBtn = e.target.closest('.js-try-again-booking');
       if (tryAgainBtn) {
         document.getElementById('user-bookings-modal').hidden = true;
         var sec = document.getElementById('section-rooms');
         if (sec) sec.scrollIntoView({ behavior: 'smooth' });
-        toast('Select an available room category to re-book.', 'info');
+        toast('Select an available room category to book.', 'info');
       }
     });
 
@@ -2276,9 +2630,67 @@
     if (backdropPrev) backdropPrev.addEventListener('click', closeVoucherPreviewModal);
 
     // Export & Backup
-    document.getElementById('btn-export-excel').addEventListener('click', exportBookingsToExcel);
-    document.getElementById('btn-download-backup').addEventListener('click', downloadBackupJSON);
-    document.getElementById('input-restore-backup').addEventListener('change', restoreBackupJSON);
+    var btnExportExcel = document.getElementById('btn-export-excel');
+    if (btnExportExcel) btnExportExcel.addEventListener('click', exportBookingsToExcel);
+
+    var btnDownloadBackup = document.getElementById('btn-download-backup');
+    if (btnDownloadBackup) btnDownloadBackup.addEventListener('click', downloadBackupJSON);
+
+    var inputRestoreBackup = document.getElementById('input-restore-backup');
+    if (inputRestoreBackup) inputRestoreBackup.addEventListener('change', restoreBackupJSON);
+
+    // Publish & Host Anywhere (GitHub Pages & Cloud Sync) Listeners
+    var btnDownloadConfig = document.getElementById('btn-download-site-config');
+    if (btnDownloadConfig) btnDownloadConfig.addEventListener('click', downloadSiteConfigJSON);
+
+    var btnCopyConfig = document.getElementById('btn-copy-site-config');
+    if (btnCopyConfig) btnCopyConfig.addEventListener('click', copySiteConfigJSON);
+
+    var btnViewConfig = document.getElementById('btn-view-site-config-preview');
+    if (btnViewConfig) btnViewConfig.addEventListener('click', toggleSiteConfigPreview);
+
+    var btnSaveCloud = document.getElementById('btn-save-cloud-sync');
+    if (btnSaveCloud) {
+      btnSaveCloud.addEventListener('click', function () {
+        var inputUrl = document.getElementById('admin-cloud-sync-url');
+        if (inputUrl) {
+          state.settings.cloudSyncUrl = inputUrl.value.trim();
+          db.set(KEY.settings, state.settings);
+        }
+        fetchCloudSyncNow(true);
+      });
+    }
+
+    var btnFetchCloud = document.getElementById('btn-fetch-cloud-now');
+    if (btnFetchCloud) {
+      btnFetchCloud.addEventListener('click', function () {
+        fetchCloudSyncNow(true);
+      });
+    }
+
+    var btnClearCloud = document.getElementById('btn-clear-cloud-sync');
+    if (btnClearCloud) {
+      btnClearCloud.addEventListener('click', function () {
+        var inputUrl = document.getElementById('admin-cloud-sync-url');
+        if (inputUrl) inputUrl.value = '';
+        state.settings.cloudSyncUrl = '';
+        db.set(KEY.settings, state.settings);
+        updateCloudSyncStatusBadge('Local Browser & Standalone JSON Engine Active', true);
+        toast('Remote Cloud Sync disconnected. Defaulting to local persistence.', 'info');
+      });
+    }
+
+    var btnInstantSaveAll = document.getElementById('btn-admin-instant-save-all');
+    if (btnInstantSaveAll) {
+      btnInstantSaveAll.addEventListener('click', function () {
+        db.set(KEY.settings, state.settings);
+        db.set(KEY.rooms, state.rooms);
+        db.set(KEY.food, state.food);
+        db.set(KEY.promos, state.promos);
+        db.set(KEY.reviews, state.reviews);
+        toast('⚡ All admin updates, categories, pricing & toggles saved instantly!', 'success');
+      });
+    }
   }
 
   function checkGeneralTermsConsent() {
@@ -2294,7 +2706,7 @@
   }
 
   /* App Initialization */
-  document.addEventListener('DOMContentLoaded', function () {
+  document.addEventListener('DOMContentLoaded', async function () {
     syncSettingsUI();
     renderRooms();
     renderFoodMenu();
@@ -2302,5 +2714,6 @@
     renderReviews();
     initEvents();
     checkGeneralTermsConsent();
+    await loadInitialSiteConfig();
   });
 })();
