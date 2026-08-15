@@ -1,6 +1,0 @@
-{
-  "name": "Hotel Diamond Executive",
-  "description": "Luxury hotel room booking website with customizable admin console, live availability, special offers, guest reviews, and optional Food & Dining service toggling.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
