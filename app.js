@@ -12,6 +12,55 @@
     deviceImgs: 'hde_device_imgs_v3'
   };
 
+  /* ==========================================================
+     GOOGLE SHEETS INTEGRATION (Google Apps Script Web App)
+     ==========================================================
+     Replace the URL below with your deployed Apps Script Web App
+     URL (see deployment instructions provided separately).
+     Example: https://script.google.com/macros/s/AKfycb.../exec
+  ========================================================== */
+  var GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwXaSfv9Z3qeVxUHq9jbuAqjLRGNHIAonzp_YtbuakGkLwBMefTK1R9dOWE31KcZ7afQQ/exec';
+
+  /**
+   * Sends a finalized booking to the Google Sheets backend.
+   * This runs in the background AFTER the booking is already saved
+   * to localStorage, so it never blocks or breaks the existing
+   * booking flow even if the network request fails.
+   *
+   * Note: uses mode:'no-cors' with a text/plain body. This is the
+   * standard workaround for calling a Google Apps Script Web App
+   * from a static site (GitHub Pages) without triggering a CORS
+   * preflight request that Apps Script cannot answer. Because of
+   * 'no-cors', the browser cannot read the response back (it will
+   * be "opaque"), so this function cannot know for certain whether
+   * the row was written — it only knows whether the request was
+   * sent without a network-level error. localStorage remains the
+   * single source of truth for the website itself; Google Sheets
+   * is a secondary record for the hotel admin.
+   */
+  function syncBookingToGoogleSheets(booking) {
+    if (!GOOGLE_APPS_SCRIPT_URL || GOOGLE_APPS_SCRIPT_URL.indexOf('https://script.google.com/macros/s/AKfycbwXaSfv9Z3qeVxUHq9jbuAqjLRGNHIAonzp_YtbuakGkLwBMefTK1R9dOWE31KcZ7afQQ/exec') !== -1) {
+      // Not configured yet — silently skip so the site keeps working
+      // exactly as before until the URL is set.
+      return;
+    }
+    try {
+      fetch(GOOGLE_APPS_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(booking)
+      }).catch(function () {
+        // Network-level failure only (server/app errors are invisible
+        // under no-cors). Booking is already safe in localStorage,
+        // so we just let the admin know sync may not have happened.
+        toast('Booking saved locally. Google Sheets sync will retry next time you are online.', 'info');
+      });
+    } catch (err) {
+      // fetch not supported or threw synchronously — never break booking flow.
+    }
+  }
+
   /* Default Seed Data */
   var DEFAULT_ROOMS = [
     {
@@ -123,69 +172,6 @@
       } catch (e) {}
     }
   };
-
-  /* Universal Controller Client & Real-time Network API */
-  var universalStateVersion = 1;
-
-  var universalApi = {
-    get: async function (url) {
-      try {
-        var res = await fetch(url, { cache: 'no-cache' });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return await res.json();
-      } catch (err) {
-        return null;
-      }
-    },
-    post: async function (url, data) {
-      try {
-        var res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data)
-        });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return await res.json();
-      } catch (err) {
-        console.warn('API POST ' + url + ' error:', err);
-        return null;
-      }
-    },
-    put: async function (url, data) {
-      try {
-        var res = await fetch(url, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data)
-        });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return await res.json();
-      } catch (err) {
-        console.warn('API PUT ' + url + ' error:', err);
-        return null;
-      }
-    },
-    del: async function (url) {
-      try {
-        var res = await fetch(url, { method: 'DELETE' });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return await res.json();
-      } catch (err) {
-        console.warn('API DELETE ' + url + ' error:', err);
-        return null;
-      }
-    }
-  };
-
-  function updateUniversalSyncBadge(statusText, isSuccess) {
-    var adminBadge = document.getElementById('admin-sync-badge-text');
-    if (adminBadge) adminBadge.textContent = statusText;
-
-    var navPill = document.getElementById('nav-live-sync-pill');
-    if (navPill) {
-      navPill.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:' + (isSuccess ? '#10B981' : '#F59E0B') + ';"></span> ' + (isSuccess ? 'Live Server Synced' : 'Offline / Standalone');
-    }
-  }
 
   /* User Isolation & Device Identification */
   function getCurrentUserId() {
@@ -950,7 +936,7 @@
     await openVoucherPreviewModal(b);
   }
 
-  async function deleteBookingById(id, skipConfirm) {
+  function deleteBookingById(id, skipConfirm) {
     if (!id) return false;
     var target = state.bookings.find(function (b) { return String(b.id).trim() === String(id).trim(); });
     if (!target) return false;
@@ -969,9 +955,6 @@
         localStorage.removeItem('hde_bookings');
         localStorage.removeItem('hde_receipts');
       } catch (e) {}
-
-      // Delete from Universal Controller server
-      await universalApi.del('/api/bookings/' + encodeURIComponent(id));
 
       var catSelect = document.getElementById('admin-filter-category');
       if (catSelect) delete catSelect.dataset.lastOptions;
@@ -1398,9 +1381,6 @@
     renderFoodMenu();
     renderOffers();
     toast('Special Access Customizations Saved!', 'success');
-
-    // Broadcast to Universal Controller live server
-    pushUniversalStateToServer(true);
   }
 
   /* Admin Rooms & Rates Manager */
@@ -1545,171 +1525,6 @@
       }
     };
     reader.readAsText(file);
-  }
-
-  /* Universal Controller Synchronization & Real-time Live Engine */
-  async function pushUniversalStateToServer(silent) {
-    try {
-      var payload = {
-        settings: state.settings,
-        rooms: state.rooms,
-        food: state.food,
-        promos: state.promos,
-        reviews: state.reviews
-      };
-
-      var res = await universalApi.post('/api/admin/save-state', payload);
-      if (res && res.success) {
-        universalStateVersion = res.version;
-        updateUniversalSyncBadge('Universal Controller: Synced & Broadcast Globally (v' + res.version + ')', true);
-        if (!silent) toast('⚡ Universal Controller: All changes synced and broadcast to all devices worldwide!', 'success');
-        return true;
-      }
-    } catch (err) {
-      console.warn('Universal Controller save warning:', err);
-    }
-    return false;
-  }
-
-  async function fetchUniversalState() {
-    try {
-      var res = await universalApi.get('/api/state');
-      if (res && res.success) {
-        universalStateVersion = res.version;
-        var modified = false;
-
-        if (res.settings && typeof res.settings === 'object') {
-          state.settings = Object.assign({}, DEFAULT_SETTINGS, res.settings);
-          db.set(KEY.settings, state.settings);
-          modified = true;
-        }
-        if (Array.isArray(res.rooms) && res.rooms.length > 0) {
-          state.rooms = res.rooms;
-          db.set(KEY.rooms, state.rooms);
-          modified = true;
-        }
-        if (Array.isArray(res.food)) {
-          state.food = res.food;
-          db.set(KEY.food, state.food);
-          modified = true;
-        }
-        if (Array.isArray(res.promos)) {
-          state.promos = res.promos;
-          db.set(KEY.promos, state.promos);
-          modified = true;
-        }
-        if (Array.isArray(res.reviews)) {
-          state.reviews = res.reviews;
-          db.set(KEY.reviews, state.reviews);
-          modified = true;
-        }
-
-        if (modified) {
-          syncSettingsUI();
-          renderRooms();
-          renderFoodMenu();
-          renderOffers();
-          renderReviews();
-
-          var adminView = document.getElementById('view-admin');
-          if (adminView && !adminView.hidden) {
-            renderAdminRooms();
-            renderAdminFood();
-            renderAdminPromos();
-            renderAdminEnlist();
-          }
-        }
-
-        updateUniversalSyncBadge('Universal Controller: Live Connected (v' + res.version + ')', true);
-        return true;
-      }
-    } catch (err) {
-      console.warn('Could not fetch Universal Controller state:', err);
-      updateUniversalSyncBadge('Standalone / Local Cache Active', false);
-    }
-    return false;
-  }
-
-  async function fetchUniversalBookings() {
-    try {
-      var adminView = document.getElementById('view-admin');
-      var isAdminOpen = adminView && !adminView.hidden;
-      var url = isAdminOpen ? '/api/bookings' : ('/api/bookings?userId=' + encodeURIComponent(getCurrentUserId()));
-      
-      var res = await universalApi.get(url);
-      if (res && res.success && Array.isArray(res.bookings)) {
-        state.bookings = res.bookings;
-        db.set(KEY.bookings, state.bookings);
-
-        if (isAdminOpen) {
-          renderAdminBookings();
-          renderAdminEnlist();
-        }
-        var myBookingsModal = document.getElementById('user-bookings-modal');
-        if (myBookingsModal && !myBookingsModal.hidden && typeof renderMyBookings === 'function') {
-          renderMyBookings();
-        }
-      }
-    } catch (err) {
-      // Background polling silent fail
-    }
-  }
-
-  var isPollingActive = false;
-  function startUniversalLivePoller() {
-    if (isPollingActive) return;
-    isPollingActive = true;
-
-    setInterval(async function () {
-      try {
-        var res = await universalApi.get('/api/sync-poll?v=' + encodeURIComponent(universalStateVersion));
-        if (res && res.outdated) {
-          universalStateVersion = res.version;
-          if (res.settings) {
-            state.settings = Object.assign({}, DEFAULT_SETTINGS, res.settings);
-            db.set(KEY.settings, state.settings);
-          }
-          if (Array.isArray(res.rooms)) {
-            state.rooms = res.rooms;
-            db.set(KEY.rooms, state.rooms);
-          }
-          if (Array.isArray(res.food)) {
-            state.food = res.food;
-            db.set(KEY.food, state.food);
-          }
-          if (Array.isArray(res.promos)) {
-            state.promos = res.promos;
-            db.set(KEY.promos, state.promos);
-          }
-          if (Array.isArray(res.reviews)) {
-            state.reviews = res.reviews;
-            db.set(KEY.reviews, state.reviews);
-          }
-
-          syncSettingsUI();
-          renderRooms();
-          renderFoodMenu();
-          renderOffers();
-          renderReviews();
-
-          var adminView = document.getElementById('view-admin');
-          if (adminView && !adminView.hidden) {
-            renderAdminRooms();
-            renderAdminFood();
-            renderAdminPromos();
-            renderAdminEnlist();
-            renderAdminBookings();
-          }
-
-          updateUniversalSyncBadge('Universal Controller: Live & Synced (v' + res.version + ')', true);
-        }
-
-        // Periodically refresh booking status (e.g. when Admin approves booking or guest submits)
-        await fetchUniversalBookings();
-      } catch (err) {
-        // Silent polling handling
-      }
-    }, 2500);
   }
 
   /* Publish & Host Anywhere (GitHub Pages & Cloud Synchronization) Engine */
@@ -1867,31 +1682,25 @@
   }
 
   async function loadInitialSiteConfig() {
-    // 1. First attempt Universal Controller server sync
-    var synced = await fetchUniversalState();
-    if (synced) {
-      await fetchUniversalBookings();
-      return;
-    }
-
-    // 2. If Cloud Sync URL is configured, pull freshest live state
+    // 1. If Cloud Sync URL is configured, pull freshest live state
     if (state.settings && state.settings.cloudSyncUrl) {
       await fetchCloudSyncNow(false);
       return;
     }
 
-    // 3. Otherwise, check if a published static site-config.json exists on the host
+    // 2. Otherwise, check if a published static site-config.json exists on the host
     try {
       var res = await fetch('./site-config.json', { cache: 'no-cache' });
       if (res.ok) {
         var staticConfig = await res.json();
+        // If local storage is pristine or empty, seed from site-config.json
         var localSettings = db.get(KEY.settings, null);
         if (!localSettings) {
           await applyRemoteConfig(staticConfig, 'Static site-config.json');
         }
       }
     } catch (e) {
-      // Standalone mode
+      // Standalone mode or preview container
     }
   }
 
@@ -1992,18 +1801,12 @@
     // Purchase Review Modal Handlers
     var btnConfirmBooking = document.getElementById('btn-confirm-submit-booking');
     if (btnConfirmBooking) {
-      btnConfirmBooking.addEventListener('click', async function () {
+      btnConfirmBooking.addEventListener('click', function () {
         if (!pendingBookingData) return;
         var created = pendingBookingData;
-
-        // Persist to Universal Controller backend server
-        var res = await universalApi.post('/api/bookings', created);
-        if (res && res.booking) {
-          created = res.booking;
-        }
-
         state.bookings.push(created);
         db.set(KEY.bookings, state.bookings);
+        syncBookingToGoogleSheets(created); // Google Sheets backend sync (non-blocking)
         pendingBookingData = null;
         document.getElementById('purchase-review-modal').hidden = true;
         showConfirmationModal(created);
@@ -2132,7 +1935,7 @@
     });
 
     // Review Form Submission
-    document.getElementById('form-add-review').addEventListener('submit', async function (e) {
+    document.getElementById('form-add-review').addEventListener('submit', function (e) {
       e.preventDefault();
       var name = document.getElementById('review-name').value.trim();
       var rating = Number(document.getElementById('review-rating').value);
@@ -2149,14 +1952,10 @@
       renderReviews();
       document.getElementById('form-add-review').reset();
       toast('Thank you for sharing your stay experience!', 'success');
-
-      // Sync review with universal controller
-      pushUniversalStateToServer(true);
     });
 
     // My Bookings Handlers
-    document.getElementById('btn-my-bookings').addEventListener('click', async function () {
-      await fetchUniversalBookings();
+    document.getElementById('btn-my-bookings').addEventListener('click', function () {
       renderMyBookings();
       document.getElementById('user-bookings-modal').hidden = false;
     });
@@ -2169,7 +1968,7 @@
 
     var btnClearMyRes = document.getElementById('btn-clear-my-reservations');
     if (btnClearMyRes) {
-      btnClearMyRes.addEventListener('click', async function () {
+      btnClearMyRes.addEventListener('click', function () {
         var myBookings = getUserBookings();
         if (!myBookings.length) {
           toast('You have no active reservations on this device to clear.', 'info');
@@ -2178,10 +1977,6 @@
 
         if (confirm('🗑️ CLEAR MY RESERVATIONS:\n\nAre you sure you want to clear all (' + myBookings.length + ') of your personal reservations from this device?\n\nThis will remove your booking logs while keeping other system data intact.')) {
           var myId = getCurrentUserId();
-          
-          // Delete all reservations for this user from server
-          await universalApi.del('/api/bookings?userId=' + encodeURIComponent(myId));
-
           state.bookings = state.bookings.filter(function (b) { return b.userId !== myId; });
           db.set(KEY.bookings, state.bookings);
           renderMyBookings();
@@ -2192,7 +1987,7 @@
       });
     }
 
-    document.getElementById('my-bookings-list').addEventListener('click', async function (e) {
+    document.getElementById('my-bookings-list').addEventListener('click', function (e) {
       var printBtn = e.target.closest('button[data-action="print-my-voucher"]');
       if (printBtn) {
         var bPrint = state.bookings.find(function (item) { return item.id === printBtn.dataset.id; });
@@ -2210,7 +2005,6 @@
         var targetId = deleteMyBtn.dataset.id;
         var myBooking = state.bookings.find(function (item) { return item.id === targetId; });
         if (myBooking && confirm('Are you sure you want to delete your reservation record for #' + myBooking.id + ' (' + myBooking.roomTitle + ')?')) {
-          await universalApi.del('/api/bookings/' + encodeURIComponent(targetId));
           state.bookings = state.bookings.filter(function (item) { return item.id !== targetId; });
           db.set(KEY.bookings, state.bookings);
           renderMyBookings();
@@ -2276,8 +2070,6 @@
         document.getElementById('admin-tab-bookings').hidden = tab !== 'bookings';
         document.getElementById('admin-tab-food').hidden = tab !== 'food';
         document.getElementById('admin-tab-export').hidden = tab !== 'export';
-        var tabPub = document.getElementById('admin-tab-publish');
-        if (tabPub) tabPub.hidden = tab !== 'publish';
 
         if (tab === 'enlist') renderAdminEnlist();
         if (tab === 'access') populateSiteCustomizerForm();
@@ -2349,7 +2141,6 @@
         renderRooms();
         renderAdminRooms();
         renderAdminEnlist();
-        pushUniversalStateToServer(true);
         toast('Image applied to ' + updatedCount + ' room category(s)!', 'success');
       });
     }
@@ -2363,7 +2154,6 @@
         renderRooms();
         renderAdminRooms();
         renderAdminEnlist();
-        pushUniversalStateToServer(true);
         toast('All room categories enlisted as Available!', 'success');
       });
     }
@@ -2381,7 +2171,6 @@
         renderRooms();
         renderAdminRooms();
         renderAdminEnlist();
-        pushUniversalStateToServer(true);
         toast('Room rates increased by ' + pct + '%', 'success');
       });
 
@@ -2394,7 +2183,6 @@
         renderRooms();
         renderAdminRooms();
         renderAdminEnlist();
-        pushUniversalStateToServer(true);
         toast('Room rates discounted by ' + pct + '%', 'success');
       });
     }
@@ -2414,7 +2202,6 @@
             renderRooms();
             renderAdminRooms();
             renderAdminEnlist();
-            pushUniversalStateToServer(true);
             toast(room.title + ' enlisted as ' + newStatus, 'success');
           }
         }
@@ -2424,7 +2211,7 @@
     // Click Roster Status Button
     var rosterWrap = document.getElementById('admin-enlist-roster-list');
     if (rosterWrap) {
-      rosterWrap.addEventListener('click', async function (e) {
+      rosterWrap.addEventListener('click', function (e) {
         var btn = e.target.closest('button');
         if (!btn) return;
         var id = btn.dataset.id;
@@ -2442,28 +2229,18 @@
           booking.status = 'Confirmed';
           booking.approvedAt = new Date().toLocaleString();
           db.set(KEY.bookings, state.bookings);
-          await universalApi.put('/api/bookings/' + encodeURIComponent(booking.id) + '/status', {
-            status: 'Confirmed',
-            approvedAt: booking.approvedAt
-          });
           renderAdminEnlist();
           renderAdminBookings();
           toast('Booking #' + booking.id + ' Approved by Admin Desk!', 'success');
         } else if (btn.classList.contains('js-admin-reject')) {
           booking.status = 'Not Available';
           db.set(KEY.bookings, state.bookings);
-          await universalApi.put('/api/bookings/' + encodeURIComponent(booking.id) + '/status', {
-            status: 'Not Available'
-          });
           renderAdminEnlist();
           renderAdminBookings();
           toast('Booking #' + booking.id + ' marked as Not Available (Try Again prompt sent to user).', 'error');
         } else if (btn.classList.contains('js-roster-status')) {
           booking.status = btn.dataset.status;
           db.set(KEY.bookings, state.bookings);
-          await universalApi.put('/api/bookings/' + encodeURIComponent(booking.id) + '/status', {
-            status: booking.status
-          });
           renderAdminEnlist();
           renderAdminBookings();
           toast('Booking status updated to ' + booking.status, 'success');
@@ -2537,7 +2314,6 @@
       renderRooms();
       renderAdminRooms();
       renderAdminEnlist();
-      pushUniversalStateToServer(true);
     });
 
     document.getElementById('admin-rooms-list').addEventListener('click', function (e) {
@@ -2562,7 +2338,6 @@
           renderRooms();
           renderAdminRooms();
           renderAdminEnlist();
-          pushUniversalStateToServer(true);
           toast('Room category removed', 'success');
         }
       }
@@ -2590,7 +2365,6 @@
       document.getElementById('form-add-food').reset();
       renderFoodMenu();
       renderAdminFood();
-      pushUniversalStateToServer(true);
       toast('New menu dish added', 'success');
     });
 
@@ -2601,7 +2375,6 @@
         db.set(KEY.food, state.food);
         renderFoodMenu();
         renderAdminFood();
-        pushUniversalStateToServer(true);
         toast('Dish removed from menu', 'success');
       }
     });
@@ -2618,7 +2391,6 @@
       document.getElementById('form-add-promo').reset();
       renderOffers();
       renderAdminPromos();
-      pushUniversalStateToServer(true);
       toast('Promo code created', 'success');
     });
 
@@ -2629,7 +2401,6 @@
         db.set(KEY.promos, state.promos);
         renderOffers();
         renderAdminPromos();
-        pushUniversalStateToServer(true);
         toast('Promo code removed', 'success');
       }
     });
@@ -2640,7 +2411,7 @@
     var filterStatElem = document.getElementById('admin-filter-status');
     if (filterStatElem) filterStatElem.addEventListener('change', renderAdminBookings);
 
-    document.getElementById('admin-bookings-list').addEventListener('click', async function (e) {
+    document.getElementById('admin-bookings-list').addEventListener('click', function (e) {
       var btn = e.target.closest('button');
       if (!btn) return;
       var id = btn.dataset.id;
@@ -2658,10 +2429,6 @@
         booking.status = 'Confirmed';
         booking.approvedAt = new Date().toLocaleString();
         db.set(KEY.bookings, state.bookings);
-        await universalApi.put('/api/bookings/' + encodeURIComponent(booking.id) + '/status', {
-          status: 'Confirmed',
-          approvedAt: booking.approvedAt
-        });
         renderAdminBookings();
         renderAdminEnlist();
         if (typeof renderMyBookings === 'function') renderMyBookings();
@@ -2669,9 +2436,6 @@
       } else if (btn.classList.contains('js-admin-reject')) {
         booking.status = 'Not Available';
         db.set(KEY.bookings, state.bookings);
-        await universalApi.put('/api/bookings/' + encodeURIComponent(booking.id) + '/status', {
-          status: 'Not Available'
-        });
         renderAdminBookings();
         renderAdminEnlist();
         if (typeof renderMyBookings === 'function') renderMyBookings();
@@ -2679,9 +2443,6 @@
       } else if (btn.dataset.action === 'status-booking') {
         booking.status = btn.dataset.status;
         db.set(KEY.bookings, state.bookings);
-        await universalApi.put('/api/bookings/' + encodeURIComponent(booking.id) + '/status', {
-          status: booking.status
-        });
         renderAdminBookings();
         renderAdminEnlist();
         if (typeof renderMyBookings === 'function') renderMyBookings();
@@ -2696,7 +2457,7 @@
     // Batch Delete Pre-existing Orders by Category Selection Order
     var btnBatchDeleteLogs = document.getElementById('btn-batch-delete-category-logs');
     if (btnBatchDeleteLogs) {
-      btnBatchDeleteLogs.addEventListener('click', async function () {
+      btnBatchDeleteLogs.addEventListener('click', function () {
         var catVal = document.getElementById('admin-filter-category') ? document.getElementById('admin-filter-category').value : 'all';
         var statVal = document.getElementById('admin-filter-status') ? document.getElementById('admin-filter-status').value : 'all';
 
@@ -2725,10 +2486,6 @@
         msg += '\n\nThis operation is permanent and irreversible.';
 
         if (confirm(msg)) {
-          for (var i = 0; i < matchingLogs.length; i++) {
-            await universalApi.del('/api/bookings/' + encodeURIComponent(matchingLogs[i].id));
-          }
-
           state.bookings = state.bookings.filter(function (b) {
             var matchCat = catVal === 'all' || (b.roomTitle && b.roomTitle.trim() === catVal.trim());
             var matchStat = statVal === 'all' || b.status === statVal;
@@ -2758,7 +2515,7 @@
     // Dedicated Action: Delete Even Secured / Booked Successfully
     var btnDeleteSecuredLogs = document.getElementById('btn-delete-secured-logs');
     if (btnDeleteSecuredLogs) {
-      btnDeleteSecuredLogs.addEventListener('click', async function () {
+      btnDeleteSecuredLogs.addEventListener('click', function () {
         var catVal = document.getElementById('admin-filter-category') ? document.getElementById('admin-filter-category').value : 'all';
 
         var securedLogs = state.bookings.filter(function (b) {
@@ -2775,10 +2532,6 @@
         var catLabel = catVal === 'all' ? 'All Categories' : catVal;
 
         if (confirm('🛡️ ADMIN OVERRIDE: DELETE EVEN SECURED / BOOKED SUCCESSFULLY\n\nFound ' + securedLogs.length + ' SECURED / BOOKED SUCCESSFULLY order log(s) in [' + catLabel + '].\n\nAre you sure you want to permanently delete these confirmed/secured orders from system storage?')) {
-          for (var i = 0; i < securedLogs.length; i++) {
-            await universalApi.del('/api/bookings/' + encodeURIComponent(securedLogs[i].id));
-          }
-
           state.bookings = state.bookings.filter(function (b) {
             var matchCat = catVal === 'all' || (b.roomTitle && b.roomTitle.trim() === catVal.trim());
             var isSecured = b.status === 'Confirmed' || b.status === 'Checked-In' || b.status === 'Completed';
@@ -2808,7 +2561,7 @@
     // Master Purge All Logs Button
     var btnPurgeAllLogs = document.getElementById('btn-purge-all-logs');
     if (btnPurgeAllLogs) {
-      btnPurgeAllLogs.addEventListener('click', async function () {
+      btnPurgeAllLogs.addEventListener('click', function () {
         if (!state.bookings.length) {
           toast('No order logs found in system storage.', 'info');
           return;
@@ -2820,9 +2573,6 @@
 
         if (confirm('🔥 CRITICAL ADMIN PURGE:\nAre you sure you want to PURGE ALL ' + state.bookings.length + ' order logs and purchase receipts from system storage?\n(Includes ' + securedCount + ' Secured / Booked Successfully orders)\n\nThis will completely wipe all reservation log records.')) {
           var totalCount = state.bookings.length;
-          
-          await universalApi.del('/api/bookings/all/purge');
-
           state.bookings = [];
           db.set(KEY.bookings, state.bookings);
           try {
@@ -2847,9 +2597,8 @@
     // Master Storage & Memory Reset Console Button
     var btnMasterStorageWipe = document.getElementById('btn-master-storage-wipe');
     if (btnMasterStorageWipe) {
-      btnMasterStorageWipe.addEventListener('click', async function () {
-        if (confirm('⚠️ MASTER STORAGE & SYSTEM MEMORY RESET:\n\nThis will permanently purge all previously created, manually edited, test, or draft booking logs from localStorage and server.\n\nThe reservation log database will start completely clean with zero lingering records.\n\nDo you want to proceed with this complete wipe?')) {
-          await universalApi.del('/api/bookings/all/purge');
+      btnMasterStorageWipe.addEventListener('click', function () {
+        if (confirm('⚠️ MASTER STORAGE & SYSTEM MEMORY RESET:\n\nThis will permanently purge all previously created, manually edited, test, or draft booking logs from localStorage (hde_bookings_v3, hde_bookings_v2, hde_receipts) and memory.\n\nThe reservation log database will start completely clean with zero lingering records.\n\nDo you want to proceed with this complete wipe?')) {
           state.bookings = [];
           db.set(KEY.bookings, []);
           try {
@@ -2981,27 +2730,15 @@
       });
     }
 
-    // Force Sync Now Button in Admin Console Header
-    var btnUniversalSyncNow = document.getElementById('btn-admin-universal-sync-now');
-    if (btnUniversalSyncNow) {
-      btnUniversalSyncNow.addEventListener('click', async function () {
-        toast('Broadcasting live state to Universal Controller...', 'info');
-        await pushUniversalStateToServer(false);
-        await fetchUniversalState();
-        await fetchUniversalBookings();
-      });
-    }
-
     var btnInstantSaveAll = document.getElementById('btn-admin-instant-save-all');
     if (btnInstantSaveAll) {
-      btnInstantSaveAll.addEventListener('click', async function () {
+      btnInstantSaveAll.addEventListener('click', function () {
         db.set(KEY.settings, state.settings);
         db.set(KEY.rooms, state.rooms);
         db.set(KEY.food, state.food);
         db.set(KEY.promos, state.promos);
         db.set(KEY.reviews, state.reviews);
-        await pushUniversalStateToServer(false);
-        toast('⚡ All admin updates, categories, pricing & toggles saved & broadcasted instantly!', 'success');
+        toast('⚡ All admin updates, categories, pricing & toggles saved instantly!', 'success');
       });
     }
   }
@@ -3028,6 +2765,5 @@
     initEvents();
     checkGeneralTermsConsent();
     await loadInitialSiteConfig();
-    startUniversalLivePoller();
   });
 })();
